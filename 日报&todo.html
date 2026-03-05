@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工作日报&Todo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  
+  <!-- Tailwind 配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#4F46E5',
+            secondary: '#10B981', // 已完成绿色
+            pending: '#F59E0B', // 进行中黄色
+            todo: '#3c487f',    // 自定义深蓝色
+            dark: '#1F2937',
+            todoPending: '#EF4444', // 未处理红色
+            calendarActive: '#4F46E5', // 日历选中日期颜色
+            calendarToday: '#E0E7FF', // 今日日期背景
+            todoRingPending: '#EF4444', // 未处理/进行中红圈
+            todoRingCompleted: '#10B981', // 全部完成绿圈
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .card-shadow {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      }
+      .table-hover {
+        @apply transition-all duration-200 hover:bg-gray-50;
+      }
+      .status-dot {
+        @apply w-4 h-4 rounded-full;
+      }
+      .filter-select {
+        @apply px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-primary/50 focus:border-primary outline-none;
+      }
+      .calendar-day {
+        @apply w-10 h-10 flex items-center justify-center rounded-full cursor-pointer transition-colors hover:bg-gray-100 relative;
+      }
+      .calendar-day-active {
+        @apply bg-calendarActive text-white;
+      }
+      .calendar-day-today {
+        @apply bg-calendarToday font-medium;
+      }
+      .calendar-day-disabled {
+        @apply text-gray-300 cursor-not-allowed hover:bg-transparent;
+      }
+      /* Todo红圈样式（未处理/进行中） */
+      .calendar-day-todo-pending {
+        @apply ring-2 ring-todoRingPending ring-inset;
+      }
+      /* Todo绿圈样式（全部完成） */
+      .calendar-day-todo-completed {
+        @apply ring-2 ring-todoRingCompleted ring-inset;
+      }
+      /* 修复选中状态与圈出样式冲突 */
+      .calendar-day-active.calendar-day-todo-pending {
+        @apply ring-white ring-opacity-80;
+      }
+      .calendar-day-active.calendar-day-todo-completed {
+        @apply ring-white ring-opacity-80;
+      }
+      .calendar-day-today.calendar-day-todo-pending {
+        @apply ring-todoRingPending ring-opacity-70;
+      }
+      .calendar-day-today.calendar-day-todo-completed {
+        @apply ring-todoRingCompleted ring-opacity-70;
+      }
+      /* 日历容器样式优化 */
+      .calendar-container {
+        @apply bg-white rounded-xl card-shadow p-4 sticky top-24 z-50;
+      }
+      /* 日报圆点标记容器（调整位置避免与圈出冲突） */
+      .report-marker-container {
+        @apply flex justify-center gap-0.5 mt-1;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-dark">
+  <!-- 顶部导航 -->
+  <header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+      <h1 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-todo flex items-center">
+        <i class="fa fa-thumbs-up mr-2"></i>工作日报&Todo
+      </h1>
+      <div class="flex items-center space-x-3">
+        <button id="exportAllBtn" class="bg-secondary text-white px-4 py-2 rounded-lg flex items-center hover:bg-secondary/90 transition-colors">
+          <i class="fa fa-download mr-2"></i>导出全部
+        </button>
+        <button id="clearAllBtn" class="bg-red-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-red-600 transition-colors">
+          <i class="fa fa-trash mr-2"></i>清空全部
+        </button>
+        <button id="clearFilterBtn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg flex items-center hover:bg-gray-300 transition-colors">
+          <i class="fa fa-filter mr-2"></i>清空筛选
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 py-8">
+    <!-- 全局日历筛选（页面左上角，固定定位） -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <!-- 左侧：全局日历筛选（占1列，sticky固定） -->
+      <div class="lg:col-span-1">
+        <div class="calendar-container">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-sm font-medium text-gray-700" id="calendarMonthTitle">2025年11月</h3>
+            <div class="flex space-x-2">
+              <button id="prevMonthBtn" class="p-1.5 rounded hover:bg-gray-100 transition-colors" title="上一个月">
+                <i class="fa fa-chevron-left text-gray-600"></i>
+              </button>
+              <button id="nextMonthBtn" class="p-1.5 rounded hover:bg-gray-100 transition-colors" title="下一个月">
+                <i class="fa fa-chevron-right text-gray-600"></i>
+              </button>
+            </div>
+          </div>
+          <!-- 日历星期头部 -->
+          <div class="grid grid-cols-7 gap-1 mb-1 text-center text-xs text-gray-500 font-medium">
+            <div>日</div>
+            <div>一</div>
+            <div>二</div>
+            <div>三</div>
+            <div>四</div>
+            <div>五</div>
+            <div>六</div>
+          </div>
+          <!-- 日历日期网格 -->
+          <div class="grid grid-cols-7 gap-1 text-center" id="calendarDays">
+            <!-- 日期由JS动态生成 -->
+          </div>
+          <!-- 筛选状态提示 + 数据标记说明（更新说明文字） -->
+          <div class="mt-3 text-xs text-gray-500 space-y-1">
+            <div id="calendarFilterTip" class="text-center">点击日期筛选当日数据 | 当前：全部</div>
+            <div class="flex items-center justify-center mt-2 flex-wrap gap-x-3 gap-y-1">
+              <span class="w-1.5 h-1.5 bg-primary rounded-full mr-1"></span>
+              <span>有日报</span>
+              <span class="w-4 h-4 border-2 border-todoRingPending rounded-full mr-1 flex items-center justify-center text-[10px]"></span>
+              <span>有未完成Todo</span>
+              <span class="w-4 h-4 border-2 border-todoRingCompleted rounded-full mr-1 flex items-center justify-center text-[10px]"></span>
+              <span>Todo全部完成</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：主要内容区（占3列） -->
+      <div class="lg:col-span-3">
+        <!-- 输入区（双栏并排） -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          <!-- Todo输入区域（自定义深蓝色字体） -->
+          <div class="bg-white rounded-xl p-6 card-shadow transform hover:shadow-lg transition-shadow">
+            <h2 class="text-xl font-semibold mb-4 flex items-center text-todo">
+              <i class="fa fa-plus-square mr-2"></i>添加Todo任务
+            </h2>
+            <div class="space-y-4 text-todo">
+              <div>
+                <label for="todoContent" class="block text-sm font-medium mb-1">工作事项</label>
+                <textarea 
+                  id="todoContent" 
+                  rows="3" 
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-todo/50 focus:border-todo outline-none transition-all resize-none text-gray-800"
+                  placeholder="请输入需要处理的工作事项...（添加后默认状态为「未处理」，可后续修改）"
+                ></textarea>
+              </div>
+              <div class="flex justify-end">
+                <button id="addTodoBtn" class="bg-todo text-white px-6 py-3 rounded-lg flex items-center hover:bg-todo/90 transition-colors shadow-md hover:shadow-lg">
+                  <i class="fa fa-plus-circle mr-2"></i>添加任务
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 日报输入区域（黑色字体） -->
+          <div class="bg-white rounded-xl p-6 card-shadow transform hover:shadow-lg transition-shadow">
+            <h2 class="text-xl font-semibold mb-4 flex items-center text-black">
+              <i class="fa fa-pencil-square-o mr-2"></i>添加今日记录
+            </h2>
+            <div class="space-y-4 text-black">
+              <div>
+                <label for="reportContent" class="block text-sm font-medium mb-1">日报内容</label>
+                <textarea 
+                  id="reportContent" 
+                  rows="3" 
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all resize-none text-gray-800"
+                  placeholder="请输入今日工作完成情况、遇到的问题等..."
+                ></textarea>
+              </div>
+              <div class="flex justify-end">
+                <button id="addReportBtn" class="bg-primary text-white px-6 py-3 rounded-lg flex items-center hover:bg-primary/90 transition-colors shadow-md hover:shadow-lg">
+                  <i class="fa fa-plus-circle mr-2"></i>添加记录
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表区（双栏并排，左Todo右日报） -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <!-- 左侧：Todo列表展示区（深蓝色字体+颜色圆点状态） -->
+          <section>
+            <div class="flex justify-between items-center mb-6">
+              <h2 class="text-xl font-semibold flex items-center text-todo">
+                <i class="fa fa-list-alt mr-2"></i>Todo任务列表
+                <span id="todoFilterCount" class="ml-2 text-sm text-gray-500">(全部：0)</span>
+              </h2>
+              <div class="flex space-x-2">
+                <button id="filterTodoAll" class="px-3 py-1 rounded-lg bg-todo text-white text-sm">全部</button>
+                <button id="filterTodoPending" class="px-3 py-1 rounded-lg bg-todoPending/20 text-todoPending text-sm hover:bg-todoPending/30 transition-colors">未处理</button>
+                <button id="filterTodoProcessing" class="px-3 py-1 rounded-lg bg-pending/20 text-pending text-sm hover:bg-pending/30 transition-colors">进行中</button>
+                <button id="filterTodoCompleted" class="px-3 py-1 rounded-lg bg-secondary/20 text-secondary text-sm hover:bg-secondary/30 transition-colors">已完成</button>
+              </div>
+            </div>
+            
+            <div class="bg-white rounded-xl card-shadow overflow-hidden h-full">
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 border-b border-gray-200">
+                      <th class="px-6 py-3 text-left text-sm font-medium text-gray-500 w-16">状态</th>
+                      <th class="px-6 py-3 text-left text-sm font-medium text-todo">工作事项</th>
+                      <th class="px-6 py-3 text-left text-sm font-medium text-todo">创建时间</th>
+                      <th class="px-6 py-3 text-center text-sm font-medium text-todo w-40">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="todoTableBody">
+                    <tr>
+                      <td colspan="4" class="px-6 py-12 text-center text-gray-500">
+                        <i class="fa fa-check-square-o text-5xl mb-4 opacity-50"></i>
+                        <p>暂无Todo任务，添加你的第一条任务吧！</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- 右侧：日报记录展示区 -->
+          <section>
+            <div class="flex justify-between items-center mb-6">
+              <h2 class="text-xl font-semibold flex items-center text-black">
+                <i class="fa fa-history mr-2"></i>工作日报记录
+                <span id="reportFilterCount" class="ml-2 text-sm text-gray-500">(全部：0)</span>
+              </h2>
+            </div>
+            
+            <div class="bg-white rounded-xl card-shadow overflow-hidden h-full">
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 border-b border-gray-200">
+                      <th class="px-6 py-3 text-left text-sm font-medium text-black w-48">记录时间</th>
+                      <th class="px-6 py-3 text-left text-sm font-medium text-black">日报内容</th>
+                      <th class="px-6 py-3 text-center text-sm font-medium text-black w-16">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reportTableBody">
+                    <tr>
+                      <td colspan="3" class="px-6 py-12 text-center text-gray-500">
+                        <i class="fa fa-file-text-o text-5xl mb-4 opacity-50"></i>
+                        <p>暂无日报记录，添加你的第一条日报吧！</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="bg-dark text-white py-6 mt-12">
+    <div class="container mx-auto px-4 text-center text-gray-400">
+      <p>工作日报&Todo &copy; <span id="currentYear"></span> | 数据仅存储在本地，安全不丢失</p>
+    </div>
+  </footer>
+
+  <script>
+    // 初始化年份
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+    // ==================== 基础配置 ====================
+    // 本地存储键名（分开存储Todo和日报）
+    const TODO_STORAGE_KEY = 'dailyTodoTasks';
+    const REPORT_STORAGE_KEY = 'dailyReportRecords';
+    
+    // 当前筛选状态
+    let todoFilter = 'all'; // all/pending/processing/completed
+    let currentFilterDate = ''; // 全局日期筛选（YYYY-MM-DD），同时作用于Todo和日报
+
+    // 日历当前显示的年月
+    let currentCalendar = {
+      year: new Date().getFullYear(),
+      month: new Date().getMonth() // 0-11
+    };
+
+    // ==================== 工具函数 ====================
+    // 统一处理Todo时间格式：2025-11-21 14:40（单行显示，无星期、无秒数）
+    function formatTodoTime(dateInput) {
+      let dateStr = typeof dateInput === 'object' ? dateInput.toISOString() : dateInput;
+      
+      if (typeof dateInput === 'object') {
+        const year = dateInput.getFullYear();
+        const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+        const day = String(dateInput.getDate()).padStart(2, '0');
+        const hours = String(dateInput.getHours()).padStart(2, '0');
+        const minutes = String(dateInput.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
+      } else if (dateStr.includes('T')) {
+        const [datePart, timePart] = dateStr.split('T');
+        const hourMinute = timePart.substring(0, 5);
+        return `${datePart} ${hourMinute}`;
+      } else {
+        dateStr = dateStr.replace(/[\u4e00-\u9fa5]/g, '').trim();
+        return dateStr.substring(0, 16);
+      }
+    }
+
+    // 日报时间格式（保留原有完整格式）
+    function formatReportDateTime(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+      const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+      const weekDay = weekDays[date.getDay()];
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} 星期${weekDay}`;
+    }
+
+    // 提取日期中的年月日（用于筛选）
+    function getDateFromDateTime(dateTimeStr) {
+      return dateTimeStr.split(' ')[0]; // 格式：YYYY-MM-DD
+    }
+
+    // 格式化日期为 YYYY-MM-DD
+    function formatDateToYMD(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    // HTML转义（防止特殊字符报错）
+    function escapeHtml(unsafe) {
+      return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // ==================== 日历功能（全局筛选+Todo状态区分） ====================
+    // 生成日历月份标题
+    function updateCalendarTitle() {
+      const title = `${currentCalendar.year}年${currentCalendar.month + 1}月`;
+      document.getElementById('calendarMonthTitle').textContent = title;
+    }
+
+    // 检查某日期的Todo状态（核心新增函数）
+    function checkDateTodoStatus(dateYMD) {
+      const tasks = getTodoTasks();
+      // 筛选该日期的所有Todo任务
+      const dateTasks = tasks.filter(task => getDateFromDateTime(task.createTime) === dateYMD);
+      
+      if (dateTasks.length === 0) {
+        return 'none'; // 无Todo
+      }
+      
+      // 检查是否有未完成的任务（未处理/进行中）
+      const hasUncompleted = dateTasks.some(task => task.status === 'pending' || task.status === 'processing');
+      
+      return hasUncompleted ? 'uncompleted' : 'completed'; // 未完成/已全部完成
+    }
+
+    // 检查某日期是否有日报记录
+    function checkDateHasReports(dateYMD) {
+      const records = getReportRecords();
+      return records.some(record => getDateFromDateTime(record.createTime) === dateYMD);
+    }
+
+    // 生成日历日期（根据Todo状态显示红圈/绿圈）
+    function generateCalendarDays() {
+      const daysContainer = document.getElementById('calendarDays');
+      daysContainer.innerHTML = '';
+
+      const firstDay = new Date(currentCalendar.year, currentCalendar.month, 1);
+      const lastDay = new Date(currentCalendar.year, currentCalendar.month + 1, 0);
+      const today = new Date();
+      const todayYMD = formatDateToYMD(today);
+
+      // 获取当月第一天是星期几（0-6，0是周日）
+      const firstDayOfWeek = firstDay.getDay();
+
+      // 添加上个月的占位日期
+      for (let i = 0; i < firstDayOfWeek; i++) {
+        const emptyDay = document.createElement('div');
+        emptyDay.className = 'calendar-day calendar-day-disabled';
+        daysContainer.appendChild(emptyDay);
+      }
+
+      // 添加当月日期
+      const totalDays = lastDay.getDate();
+      for (let day = 1; day <= totalDays; day++) {
+        const dateEl = document.createElement('div');
+        const date = new Date(currentCalendar.year, currentCalendar.month, day);
+        const dateYMD = formatDateToYMD(date);
+        
+        // 基础样式
+        dateEl.className = 'calendar-day';
+        dateEl.textContent = day;
+        dateEl.dataset.date = dateYMD;
+
+        // 今日样式
+        if (dateYMD === todayYMD) {
+          dateEl.classList.add('calendar-day-today');
+        }
+
+        // 已选中日期样式
+        if (dateYMD === currentFilterDate) {
+          dateEl.classList.add('calendar-day-active');
+        }
+
+        // 检查Todo状态并添加对应圈形样式
+        const todoStatus = checkDateTodoStatus(dateYMD);
+        if (todoStatus === 'uncompleted') {
+          // 未处理/进行中：红圈
+          dateEl.classList.add('calendar-day-todo-pending');
+        } else if (todoStatus === 'completed') {
+          // 全部完成：绿圈
+          dateEl.classList.add('calendar-day-todo-completed');
+        }
+
+        // 检查是否有日报并添加蓝色圆点标记
+        const hasReport = checkDateHasReports(dateYMD);
+        if (hasReport) {
+          const markerContainer = document.createElement('div');
+          markerContainer.className = 'report-marker-container';
+          
+          const reportDot = document.createElement('div');
+          reportDot.className = 'w-1.5 h-1.5 bg-primary rounded-full';
+          markerContainer.appendChild(reportDot);
+          
+          dateEl.appendChild(markerContainer);
+        }
+
+        // 点击日期筛选（同时作用于Todo和日报）
+        dateEl.addEventListener('click', () => {
+          // 如果点击的是已选中的日期，取消筛选
+          if (dateYMD === currentFilterDate) {
+            currentFilterDate = '';
+          } else {
+            currentFilterDate = dateYMD;
+          }
+          // 重新渲染日历和两个列表
+          generateCalendarDays();
+          updateFilterTip();
+          renderTodoTasks(todoFilter);
+          renderReportRecords();
+          updateCountDisplays();
+        });
+
+        daysContainer.appendChild(dateEl);
+      }
+
+      // 计算需要添加的下个月占位日期数量
+      const totalCells = 42; // 6行×7列
+      const filledCells = firstDayOfWeek + totalDays;
+      const emptyCells = totalCells - filledCells;
+
+      // 添加下个月的占位日期
+      for (let i = 0; i < emptyCells; i++) {
+        const emptyDay = document.createElement('div');
+        emptyDay.className = 'calendar-day calendar-day-disabled';
+        daysContainer.appendChild(emptyDay);
+      }
+    }
+
+    // 切换月份
+    function changeMonth(direction) {
+      currentCalendar.month += direction;
+      // 处理跨年
+      if (currentCalendar.month < 0) {
+        currentCalendar.month = 11;
+        currentCalendar.year--;
+      } else if (currentCalendar.month > 11) {
+        currentCalendar.month = 0;
+        currentCalendar.year++;
+      }
+      updateCalendarTitle();
+      generateCalendarDays();
+    }
+
+    // 更新筛选提示文字
+    function updateFilterTip() {
+      const tipEl = document.getElementById('calendarFilterTip');
+      if (currentFilterDate) {
+        // 解析日期显示为 2025年11月21日
+        const [year, month, day] = currentFilterDate.split('-');
+        tipEl.textContent = `当前筛选：${year}年${month}月${day}日 | 点击取消`;
+      } else {
+        tipEl.textContent = '点击日期筛选当日数据 | 当前：全部';
+      }
+    }
+
+    // 清空筛选
+    function clearAllFilters() {
+      currentFilterDate = '';
+      todoFilter = 'all';
+      generateCalendarDays();
+      updateFilterTip();
+      renderTodoTasks('all');
+      renderReportRecords();
+      updateCountDisplays();
+    }
+
+    // ==================== Todo功能（支持日期筛选） ====================
+    // 1. 获取所有Todo任务（兼容所有旧数据格式）
+    function getTodoTasks() {
+      const data = localStorage.getItem(TODO_STORAGE_KEY);
+      if (!data) return [];
+      
+      const tasks = JSON.parse(data);
+      tasks.forEach(task => {
+        if (task.createDate && task.createTime) {
+          task.createTime = `${task.createDate} ${task.createTime}`;
+          delete task.createDate;
+        } else if (task.createTime) {
+          task.createTime = formatTodoTime(task.createTime);
+        }
+      });
+      localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(tasks));
+      return tasks;
+    }
+
+    // 2. 保存Todo任务
+    function saveTodoTask(content) {
+      const tasks = getTodoTasks();
+      const now = new Date();
+      
+      const newTask = {
+        id: Date.now(),
+        content: content.trim(),
+        status: 'pending',
+        createTime: formatTodoTime(now),
+        timestamp: now.getTime()
+      };
+      
+      tasks.push(newTask);
+      localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(tasks));
+      
+      // 更新日历标记（如果当前在当月）
+      const todayYMD = formatDateToYMD(now);
+      const calendarMonth = currentCalendar.month;
+      const currentMonth = now.getMonth();
+      if (calendarMonth === currentMonth) {
+        generateCalendarDays();
+      }
+      
+      renderTodoTasks(todoFilter);
+      updateCountDisplays();
+      return newTask;
+    }
+
+    // 3. 更新Todo状态（关键：状态变化时更新日历）
+    function updateTodoStatus(id, newStatus) {
+      let tasks = getTodoTasks();
+      const taskToUpdate = tasks.find(task => task.id === id);
+      const taskDate = taskToUpdate ? getDateFromDateTime(taskToUpdate.createTime) : '';
+      
+      tasks = tasks.map(task => {
+        if (task.id === id) {
+          return { ...task, status: newStatus };
+        }
+        return task;
+      });
+      
+      localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(tasks));
+      renderTodoTasks(todoFilter);
+      updateCountDisplays();
+      
+      // 如果更新的任务日期在当前显示的月份，刷新日历
+      if (taskDate) {
+        const [taskYear, taskMonth] = taskDate.split('-').map(Number);
+        if (taskYear === currentCalendar.year && taskMonth - 1 === currentCalendar.month) {
+          generateCalendarDays();
+        }
+      }
+    }
+
+    // 4. 删除Todo任务（关键：删除时更新日历）
+    function deleteTodoTask(id) {
+      let tasks = getTodoTasks();
+      const taskToDelete = tasks.find(task => task.id === id);
+      const taskDate = taskToDelete ? getDateFromDateTime(taskToDelete.createTime) : '';
+      
+      tasks = tasks.filter(task => task.id !== id);
+      localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(tasks));
+      
+      renderTodoTasks(todoFilter);
+      updateCountDisplays();
+      
+      // 如果删除的任务日期在当前显示的月份，刷新日历
+      if (taskDate) {
+        const [taskYear, taskMonth] = taskDate.split('-').map(Number);
+        if (taskYear === currentCalendar.year && taskMonth - 1 === currentCalendar.month) {
+          generateCalendarDays();
+        }
+      }
+    }
+
+    // 5. 筛选Todo任务（状态筛选 + 日期筛选）
+    function filterTodoTasks(tasks, filterType) {
+      let filtered = [...tasks];
+      
+      // 日期筛选（优先）
+      if (currentFilterDate) {
+        filtered = filtered.filter(task => getDateFromDateTime(task.createTime) === currentFilterDate);
+      }
+      
+      // 状态筛选
+      switch(filterType) {
+        case 'pending':
+          filtered = filtered.filter(task => task.status === 'pending');
+          break;
+        case 'processing':
+          filtered = filtered.filter(task => task.status === 'processing');
+          break;
+        case 'completed':
+          filtered = filtered.filter(task => task.status === 'completed');
+          break;
+        case 'all':
+        default:
+          break;
+      }
+      
+      return filtered;
+    }
+
+    // 6. 获取状态颜色
+    function getStatusColor(status) {
+      switch(status) {
+        case 'pending':
+          return 'bg-todoPending';
+        case 'processing':
+          return 'bg-pending';
+        case 'completed':
+          return 'bg-secondary';
+        default:
+          return 'bg-todoPending';
+      }
+    }
+
+    // 7. 渲染Todo任务列表
+    function renderTodoTasks(filterType) {
+      const tasks = getTodoTasks();
+      const filteredTasks = filterTodoTasks(tasks, filterType);
+      const tableBody = document.getElementById('todoTableBody');
+
+      updateTodoFilterButtons(filterType);
+
+      if (filteredTasks.length === 0) {
+        let emptyText = '暂无Todo任务，添加你的第一条任务吧！';
+        if (currentFilterDate) {
+          const [year, month, day] = currentFilterDate.split('-');
+          if (filterType !== 'all') {
+            const statusMap = {
+              pending: '未处理',
+              processing: '进行中',
+              completed: '已完成'
+            };
+            emptyText = `未找到${year}年${month}月${day}日${statusMap[filterType]}的任务`;
+          } else {
+            emptyText = `未找到${year}年${month}月${day}日的Todo任务`;
+          }
+        } else if (filterType !== 'all') {
+          const statusMap = {
+            pending: '未处理',
+            processing: '进行中',
+            completed: '已完成'
+          };
+          emptyText = `暂无${statusMap[filterType]}的任务`;
+        }
+        
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="4" class="px-6 py-12 text-center text-gray-500">
+              <i class="fa fa-check-square-o text-5xl mb-4 opacity-50"></i>
+              <p>${emptyText}</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      filteredTasks.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = '';
+      filteredTasks.forEach(task => {
+        const statusColor = getStatusColor(task.status);
+        const displayTime = formatTodoTime(task.createTime);
+        html += `
+          <tr class="border-b border-gray-100 table-hover">
+            <td class="px-6 py-4">
+              <div class="status-dot ${statusColor}" title="${task.status === 'pending' ? '未处理' : task.status === 'processing' ? '进行中' : '已完成'}"></div>
+            </td>
+            <td class="px-6 py-4 text-todo whitespace-pre-line">
+              ${escapeHtml(task.content)}
+            </td>
+            <td class="px-6 py-4 text-sm text-todo">
+              ${displayTime}
+            </td>
+            <td class="px-6 py-4 text-center">
+              <div class="flex justify-center space-x-3">
+                <select onchange="updateTodoStatus(${task.id}, this.value)" class="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-todo">
+                  <option value="pending" ${task.status === 'pending' ? 'selected' : ''}>未处理</option>
+                  <option value="processing" ${task.status === 'processing' ? 'selected' : ''}>进行中</option>
+                  <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>已完成</option>
+                </select>
+                <button onclick="deleteTodoTask(${task.id})" class="text-red-500 hover:text-red-700 transition-colors" title="删除">
+                  <i class="fa fa-trash-o"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      tableBody.innerHTML = html;
+    }
+
+    // 8. 更新Todo筛选按钮状态
+    function updateTodoFilterButtons(activeFilter) {
+      todoFilter = activeFilter;
+      const buttons = [
+        { id: 'filterTodoAll', type: 'all', class: 'bg-todo text-white' },
+        { id: 'filterTodoPending', type: 'pending', class: 'bg-todoPending/20 text-todoPending' },
+        { id: 'filterTodoProcessing', type: 'processing', class: 'bg-pending/20 text-pending' },
+        { id: 'filterTodoCompleted', type: 'completed', class: 'bg-secondary/20 text-secondary' }
+      ];
+
+      buttons.forEach(({ id, type, class: btnClass }) => {
+        const button = document.getElementById(id);
+        if (type === activeFilter) {
+          button.className = `px-3 py-1 rounded-lg ${btnClass} text-sm`;
+        } else {
+          button.className = `px-3 py-1 rounded-lg ${btnClass} hover:bg-opacity-30 transition-colors text-sm`;
+        }
+      });
+    }
+
+    // ==================== 日报功能（支持日期筛选） ====================
+    // 1. 获取所有日报记录
+    function getReportRecords() {
+      const data = localStorage.getItem(REPORT_STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    }
+
+    // 2. 保存日报记录
+    function saveReportRecord(content) {
+      const records = getReportRecords();
+      const now = new Date();
+      
+      const newRecord = {
+        id: Date.now(),
+        content: content.trim(),
+        createTime: formatReportDateTime(now),
+        timestamp: now.getTime()
+      };
+      
+      records.push(newRecord);
+      localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify(records));
+      
+      // 更新日历标记（如果当前在当月）
+      const todayYMD = formatDateToYMD(now);
+      const calendarMonth = currentCalendar.month;
+      const currentMonth = now.getMonth();
+      if (calendarMonth === currentMonth) {
+        generateCalendarDays();
+      }
+      
+      renderReportRecords();
+      updateCountDisplays();
+      return newRecord;
+    }
+
+    // 3. 删除日报记录
+    function deleteReportRecord(id) {
+      let records = getReportRecords();
+      const recordToDelete = records.find(record => record.id === id);
+      records = records.filter(record => record.id !== id);
+      localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify(records));
+      
+      // 更新日历标记（如果删除的是当前显示月份的记录）
+      if (recordToDelete) {
+        const recordDate = getDateFromDateTime(recordToDelete.createTime);
+        const [recordYear, recordMonth] = recordDate.split('-').map(Number);
+        if (recordYear === currentCalendar.year && recordMonth - 1 === currentCalendar.month) {
+          generateCalendarDays();
+        }
+      }
+      
+      renderReportRecords();
+      updateCountDisplays();
+    }
+
+    // 4. 筛选日报记录（仅日期筛选）
+    function filterReportRecords(records) {
+      let filtered = [...records];
+      
+      // 日期筛选
+      if (currentFilterDate) {
+        filtered = filtered.filter(record => getDateFromDateTime(record.createTime) === currentFilterDate);
+      }
+      
+      return filtered;
+    }
+
+    // 5. 渲染日报记录列表
+    function renderReportRecords() {
+      const records = getReportRecords();
+      const filteredRecords = filterReportRecords(records);
+      const tableBody = document.getElementById('reportTableBody');
+
+      if (filteredRecords.length === 0) {
+        let emptyText = '暂无日报记录，添加你的第一条日报吧！';
+        if (currentFilterDate) {
+          const [year, month, day] = currentFilterDate.split('-');
+          emptyText = `未找到${year}年${month}月${day}日的日报记录`;
+        }
+        
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="3" class="px-6 py-12 text-center text-gray-500">
+              <i class="fa fa-file-text-o text-5xl mb-4 opacity-50"></i>
+              <p>${emptyText}</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      // 按创建时间降序排序（最新的在前面）
+      filteredRecords.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = '';
+      filteredRecords.forEach(record => {
+        html += `
+          <tr class="border-b border-gray-100 table-hover">
+            <td class="px-6 py-4 text-sm text-black">
+              ${record.createTime}
+            </td>
+            <td class="px-6 py-4 text-black whitespace-pre-line">
+              ${escapeHtml(record.content)}
+            </td>
+            <td class="px-6 py-4 text-center">
+              <button onclick="deleteReportRecord(${record.id})" class="text-red-500 hover:text-red-700 transition-colors" title="删除">
+                <i class="fa fa-trash-o"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+
+      tableBody.innerHTML = html;
+    }
+
+    // ==================== 统计显示 ====================
+    // 更新计数显示
+    function updateCountDisplays() {
+      const todoTasks = getTodoTasks();
+      const filteredTodos = filterTodoTasks(todoTasks, todoFilter);
+      const totalTodos = currentFilterDate 
+        ? todoTasks.filter(task => getDateFromDateTime(task.createTime) === currentFilterDate).length
+        : todoTasks.length;
+      
+      const reportRecords = getReportRecords();
+      const filteredReports = filterReportRecords(reportRecords);
+      const totalReports = currentFilterDate
+        ? reportRecords.filter(record => getDateFromDateTime(record.createTime) === currentFilterDate).length
+        : reportRecords.length;
+      
+      // 更新Todo计数
+      let todoCountText = currentFilterDate 
+        ? `(筛选日：${filteredTodos.length}/${totalTodos})`
+        : todoFilter === 'all'
+          ? `(全部：${totalTodos})`
+          : `(筛选：${filteredTodos.length}/${totalTodos})`;
+      document.getElementById('todoFilterCount').textContent = todoCountText;
+      
+      // 更新日报计数
+      let reportCountText = currentFilterDate
+        ? `(筛选日：${filteredReports.length}/${totalReports})`
+        : `(全部：${totalReports})`;
+      document.getElementById('reportFilterCount').textContent = reportCountText;
+    }
+
+    // ==================== 导出功能 ====================
+    function exportAllData() {
+      const todoTasks = getTodoTasks();
+      const reportRecords = getReportRecords();
+      
+      // 筛选导出数据（如果有日期筛选）
+      const filteredTodos = currentFilterDate 
+        ? todoTasks.filter(task => getDateFromDateTime(task.createTime) === currentFilterDate)
+        : todoTasks;
+      
+      const filteredReports = currentFilterDate
+        ? reportRecords.filter(record => getDateFromDateTime(record.createTime) === currentFilterDate)
+        : reportRecords;
+      
+      if (filteredTodos.length === 0 && filteredReports.length === 0) {
+        alert('当前筛选条件下暂无数据可导出');
+        return;
+      }
+
+      const now = new Date();
+      let exportContent = '工作日报&Todo - 数据导出\n';
+      exportContent += '='.repeat(80) + '\n\n';
+      exportContent += `导出时间：${formatReportDateTime(now)}\n`;
+      exportContent += currentFilterDate 
+        ? `筛选条件：${currentFilterDate}\n\n`
+        : '筛选条件：全部数据\n\n';
+
+      // 导出Todo数据
+      exportContent += '【Todo任务列表】\n';
+      exportContent += '-'.repeat(40) + '\n';
+      if (filteredTodos.length > 0) {
+        filteredTodos.sort((a, b) => b.timestamp - a.timestamp).forEach((task, index) => {
+          const statusText = task.status === 'pending' ? '未处理' : task.status === 'processing' ? '进行中' : '已完成';
+          exportContent += `${index + 1}. [${statusText}] ${task.content}\n`;
+          exportContent += `   创建时间：${task.createTime}\n\n`;
+        });
+      } else {
+        exportContent += '暂无Todo任务记录\n\n';
+      }
+
+      // 导出日报数据
+      exportContent += '【工作日报记录】\n';
+      exportContent += '-'.repeat(40) + '\n';
+      if (filteredReports.length > 0) {
+        filteredReports.sort((a, b) => b.timestamp - a.timestamp).forEach((record, index) => {
+          exportContent += `${index + 1}. ${record.content}\n`;
+          exportContent += `   记录时间：${record.createTime}\n\n`;
+        });
+      } else {
+        exportContent += '暂无日报记录\n\n';
+      }
+
+      // 下载文件
+      const blob = new Blob([exportContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const fileName = currentFilterDate
+        ? `工作日报&Todo_${currentFilterDate.replace(/-/g, '')}.txt`
+        : `工作日报&Todo_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}.txt`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // ==================== 清空功能 ====================
+    function clearAllData() {
+      if (confirm('确定要清空所有Todo和日报数据吗？此操作不可恢复！')) {
+        localStorage.removeItem(TODO_STORAGE_KEY);
+        localStorage.removeItem(REPORT_STORAGE_KEY);
+        clearAllFilters(); // 清空筛选并刷新
+      }
+    }
+
+    // ==================== 事件监听 ====================
+    document.addEventListener('DOMContentLoaded', () => {
+      // 初始化日历
+      updateCalendarTitle();
+      generateCalendarDays();
+      updateFilterTip();
+      
+      // 初始化渲染
+      renderTodoTasks('all');
+      renderReportRecords();
+      updateCountDisplays();
+
+      // 1. Todo相关事件
+      document.getElementById('addTodoBtn').addEventListener('click', () => {
+        const content = document.getElementById('todoContent').value;
+        if (!content.trim()) {
+          alert('请输入工作事项内容');
+          return;
+        }
+        saveTodoTask(content);
+        document.getElementById('todoContent').value = '';
+      });
+
+      document.getElementById('todoContent').addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') {
+          document.getElementById('addTodoBtn').click();
+        }
+      });
+
+      document.getElementById('filterTodoAll').addEventListener('click', () => renderTodoTasks('all'));
+      document.getElementById('filterTodoPending').addEventListener('click', () => renderTodoTasks('pending'));
+      document.getElementById('filterTodoProcessing').addEventListener('click', () => renderTodoTasks('processing'));
+      document.getElementById('filterTodoCompleted').addEventListener('click', () => renderTodoTasks('completed'));
+
+      // 2. 日报相关事件
+      document.getElementById('addReportBtn').addEventListener('click', () => {
+        const content = document.getElementById('reportContent').value;
+        if (!content.trim()) {
+          alert('请输入日报内容');
+          return;
+        }
+        saveReportRecord(content);
+        document.getElementById('reportContent').value = '';
+      });
+
+      document.getElementById('reportContent').addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') {
+          document.getElementById('addReportBtn').click();
+        }
+      });
+
+      // 3. 日历相关事件
+      document.getElementById('prevMonthBtn').addEventListener('click', () => changeMonth(-1));
+      document.getElementById('nextMonthBtn').addEventListener('click', () => changeMonth(1));
+
+      // 4. 全局功能按钮
+      document.getElementById('exportAllBtn').addEventListener('click', exportAllData);
+      document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
+      document.getElementById('clearFilterBtn').addEventListener('click', clearAllFilters);
+    });
+
+    // 全局函数（供HTML调用）
+    window.updateTodoStatus = updateTodoStatus;
+    window.deleteTodoTask = deleteTodoTask;
+    window.deleteReportRecord = deleteReportRecord;
+  </script>
+</body>
+</html>
